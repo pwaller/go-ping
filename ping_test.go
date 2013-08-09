@@ -1,3 +1,5 @@
+// Note: these tests currently aren't automatic, but just show some
+//       output which can be visually inspected by the user.
 package ping
 
 import (
@@ -23,8 +25,8 @@ func TestPing(t *testing.T) {
 
 func TestPinger(t *testing.T) {
 	s := time.Now()
-	pinger := Pinger("localhost", 1, 100*time.Millisecond)
-	for i := 0; i < 11; i++ {
+	pinger := Pinger("localhost", 1, 200*time.Millisecond)
+	for i := 0; i < 1+5; i++ {
 		println(<-pinger)
 	}
 	println("Elapsed =", time.Since(s).String())

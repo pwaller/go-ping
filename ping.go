@@ -1,3 +1,15 @@
+// Implements pinging of remote hosts via the system ping utility.
+//
+// Pull requests welcome.
+// 
+// This implementation is not totally intuitive. It does not invoke ping each
+// time a ping request is due to be sent, but instead invokes one ping process
+// which is stopped (SIGSTOP) until it is time to send a ping. When it is time
+// to send a ping the process is resumed (SIGCONT) until a line of output comes
+// from the utility. This means that if multiple ping packet
+//
+// The current implementation has only been tested in cases where the ping
+// utility does not exit unexpectedly. It should panic.
 package ping
 
 import (
@@ -9,8 +21,21 @@ import (
 	"time"
 )
 
-func Ping(host string) chan chan string {
-	cmd := exec.Command("ping", "-i0.2", host)
+// Ping returns a channel of channel which can be used to ping a remote host on
+// demand (up to a maximum rate of 1 every 200ms). The ping process is paused
+// with a SIGSTOP until a "request" comes in by reading from the  `request`
+// channel, which gives the requester a channel over which a line of output from
+// the ping utility is put.
+// See the implementation of `ping.Pinger` for an example usage and for
+// an alternative interface.
+func Ping(host string) (request chan chan string) {
+	request = make(chan chan string)
+
+	// Ping with the shortest period allowed as non-root (-i0.2 = 200ms)
+	// and don't bother with dns lookups (-n)
+	// and display a unixtime timestamp at the beginning of the line (-D)
+	cmd := exec.Command("ping", "-i0.2", "-n", "-D", host)
+	started := false
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -20,16 +45,14 @@ func Ping(host string) chan chan string {
 	if err != nil {
 		panic(err)
 	}
-	ch := make(chan chan string)
 
 	go func() {
 		r := textproto.NewReader(bufio.NewReader(stdout))
-		started := false
+
 		response := make(chan string)
 		for {
-			// Stop ping until we're ready to send one
 			// Wait for a request to transmit the ping
-			ch <- response
+			request <- response
 
 			if !started {
 				started = true
@@ -44,10 +67,12 @@ func Ping(host string) chan chan string {
 					if err != nil {
 						panic(err)
 					}
-					close(ch)
+					close(request)
 				}()
 
-				_, err := r.ReadLine() // Discard first line
+				// Discard first line, usually of the form
+				// "PING localhost (127.0.0.1) 56(84) bytes of data."
+				_, err := r.ReadLine()
 				if err != nil {
 					panic(err)
 				}
@@ -58,20 +83,22 @@ func Ping(host string) chan chan string {
 				}
 			}
 
-			s, err := r.ReadLine()
+			line, err := r.ReadLine()
 			if err != nil {
 				break
 			}
+
+			// Immediately stop ping until we're ready to send the next one
 			err = cmd.Process.Signal(syscall.SIGSTOP)
 			if err != nil {
 				panic(err)
 			}
 
-			response <- s
+			response <- line
 		}
 	}()
 
-	return ch
+	return
 }
 
 // Ping `host` `n` times per `period`, sending the pings on the returned channel

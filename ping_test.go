@@ -13,10 +13,19 @@ func TestPing(t *testing.T) {
 		println("t = ", <-r)
 		resp := time.Since(t)
 		println(" -- ", resp.String())
-		time.Sleep(2 * time.Second)
+		time.Sleep(500 * time.Millisecond)
 		n++
 		if n > 1 {
 			break
 		}
 	}
+}
+
+func TestPinger(t *testing.T) {
+	s := time.Now()
+	pinger := Pinger("localhost", 1, 100*time.Millisecond)
+	for i := 0; i < 11; i++ {
+		println(<-pinger)
+	}
+	println("Elapsed =", time.Since(s).String())
 }
